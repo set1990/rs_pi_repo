@@ -1,0 +1,1 @@
+start "" "C:\Program Files (x86)\WinSCP\WinSCP.exe" sftp://set1990@192.168.1.117/ /privatekey=C:\rs_pi_repo\build_serwer_key.ppk

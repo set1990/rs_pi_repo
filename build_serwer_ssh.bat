@@ -1,0 +1,1 @@
+start c:\putty.exe  -ssh set1990@192.168.1.117 -i C:\rs_pi_repo\build_serwer_key.ppk

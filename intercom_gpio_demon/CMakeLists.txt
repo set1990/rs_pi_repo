@@ -1,0 +1,8 @@
+﻿cmake_minimum_required(VERSION 3.10)
+project(intercom_gpio_demon C CXX)
+include(cmake/arm-flags.cmake)
+add_subdirectory(external/libpigpio)
+add_executable(intercom_gpio_demon src/main.cpp src/physical_controller/physical_controller.cpp)
+target_include_directories(intercom_gpio_demon PUBLIC include/physical_controller include/async_logger)
+find_package(Threads REQUIRED)
+target_link_libraries(intercom_gpio_demon PRIVATE pigpio Threads::Threads rt)

@@ -1,0 +1,1 @@
+start "" "C:\Program Files (x86)\WinSCP\WinSCP.exe" sftp://root@RspiZ.local/ /privatekey=C:\rs_pi_repo\target_key.ppk

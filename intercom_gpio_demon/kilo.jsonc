@@ -1,0 +1,21 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "google/gemini-3.1-flash-lite-preview",
+  "provider": {
+    "google": {
+      "options": {
+        "apiKey": "{env:GOOGLE_API_KEY}"
+      }
+    }
+  },
+  "mcp": {
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer {env:CONTEXT7_API_KEY}"
+      }
+    }
+  }
+}

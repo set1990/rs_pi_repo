@@ -1,0 +1,1 @@
+start c:\putty.exe  -ssh root@RspiZ.local -i C:\rs_pi_repo\target_key.ppk
