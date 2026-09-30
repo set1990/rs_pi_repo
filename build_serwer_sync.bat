@@ -6,7 +6,7 @@ set REMOTE_PATH="/home/set1990/RSpi_project/intercom_gpio_demon"
 
 %WINSCP_PATH% /log="C:\rs_pi_repo\sync_log.txt" /command ^
     "open sftp://set1990@192.168.1.117/ -privatekey=""C:\rs_pi_repo\build_serwer_key.ppk"" -hostkey=""*""" ^
-    "synchronize both -filemask=""| %IGNORE_PATH%/;"" %LOCAL_PATH% %REMOTE_PATH%" ^
+    "synchronize both -filemask=""| .*/; .*"" %LOCAL_PATH% %REMOTE_PATH%" ^^
     "exit"
 
 echo Synchronization complete!
