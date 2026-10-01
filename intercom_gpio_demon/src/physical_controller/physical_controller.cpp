@@ -1,4 +1,5 @@
 #include <mutex>
+#include <chrono>
 #include "physical_controller.h"
 #include "async_logger.h"
 #include "pigpio.h"
@@ -10,18 +11,59 @@ std::shared_ptr<PhysicalController> PhysicalController::create_controller(uint8_
 	return std::shared_ptr<PhysicalController>(new PhysicalController(pin_input, pin_out1, pin_out2)); // @suppress("Symbol is not resolved")
 }
 
-PhysicalController::PhysicalController(uint8_t pint_input, uint8_t pint_out1, uint8_t pint_out2):
-		config_pins{pint_input, pint_out1, pint_out2}
+PhysicalController::PhysicalController(uint8_t pint_input, uint8_t pint_out1, uint8_t pint_out2): config_pins{pint_input, pint_out1, pint_out2}
 {
     gpioSetMode(config_pins.pin_input, PI_INPUT);
     gpioSetPullUpDown(config_pins.pin_input, PI_PUD_OFF);
+    worker_thread = std::thread(&PhysicalController::worker_loop, this);
 }
 
 PhysicalController::~PhysicalController()
 {
 	gpioSetAlertFuncEx(config_pins.pin_input, nullptr, nullptr);
+
+	{
+		std::lock_guard<std::mutex> lock(queue_mtx);
+	    stop_worker = true;
+	}
+	queue_cv.notify_all();
+
+	if (worker_thread.joinable())
+	{
+		worker_thread.join();
+	}
 }
 
+void PhysicalController::worker_loop()
+{
+    while (true)
+    {
+        std::function<void()> task;
+
+        {
+            std::unique_lock<std::mutex> lock(queue_mtx);
+            queue_cv.wait(lock, [this]() {
+                return stop_worker || !task_queue.empty();
+            });
+
+            if (stop_worker && task_queue.empty()) break;
+
+            task = std::move(task_queue.front());
+            task_queue.pop();
+        }
+
+        if (task) task();
+    }
+}
+
+void PhysicalController::enqueue_task(std::function<void()> task)
+{
+    {
+    	std::lock_guard<std::mutex> lock(queue_mtx);
+        task_queue.push(std::move(task));
+    }
+    queue_cv.notify_one();
+}
 
 void PhysicalController::open_door()
 {
@@ -52,10 +94,10 @@ void PhysicalController::gpioCallbackEx(int gpio, int level, uint32_t tick, void
     	        gpioSetWatchdog(self->config_pins.pin_input, 0);
     	    }
     	}
-
     	if (callback_to_run)
     	{
-    		callback_to_run(self->shared_from_this());
+    		auto self_ptr = self->shared_from_this();
+    		self->enqueue_task([self_ptr, callback_to_run]() {callback_to_run(self_ptr);});
     	}
     }
 }

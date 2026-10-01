@@ -1,3 +1,12 @@
+/**
+ * @file async_logger.h
+ * @brief Thread-safe, asynchronous logging library with multiple sink support.
+ * @details Implements a singleton logger that buffers log entries in a FIFO queue
+ *          and dispatches them asynchronously in a dedicated background worker thread.
+ *          Supports output to the system console (with optional ANSI colors), rotating 
+ *          log files, and UDP network streaming, configurable via an INI file or runtime API.
+ */
+ 
 #ifndef ASYNC_LOGGER_HPP
 #define ASYNC_LOGGER_HPP
 
