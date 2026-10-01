@@ -56,7 +56,7 @@ public:
      * @param callback User callback function executed upon receiving the expected pulses.
      * @param window_ms Watchdog timeout duration [ms] between consecutive pulses.
      */
-    void wait_for_request(uint8_t expect_number = 0, std::function<void(std::shared_ptr<PhysicalController>)> callback = nullptr, uint8_t window_ms = 200);
+    void wait_for_request(uint8_t expect_number = 0, std::function<void(std::shared_ptr<PhysicalController>)> callback = nullptr, uint32_t window_ms = 200);
 
     void accept_request();
     void decline_request();
@@ -72,7 +72,7 @@ public:
 
 private:
     std::mutex mtx;
-	uint8_t timout = 0;
+    uint32_t timout = 0;
 	uint8_t req_number = 0;
 	uint8_t expect = 0;
 	pins config_pins;
@@ -87,6 +87,8 @@ private:
 
 	void worker_loop();
 	void enqueue_task(std::function<void()> task);
+	inline void start_alert();
+	inline void stop_alert();
 
 	/**
 	 * @brief Static C-style callback function registered with the pigpio library.

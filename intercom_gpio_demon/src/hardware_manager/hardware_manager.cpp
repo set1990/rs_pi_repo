@@ -14,9 +14,8 @@ void HardwareManager::initialize()
         if (gpioInitialise() >= 0)
         {
             is_initialized = true;
-            std::cout << "Hardware system initialized.\n";
+            LOG_INFO("Hardware system initialized");
         }
-
     }
 }
 
@@ -26,7 +25,7 @@ void HardwareManager::terminate()
     {
         gpioTerminate();
         is_initialized = false;
-        std::cout << "Hardware system terminated.\n";
+        LOG_INFO("Hardware system terminated");
     }
 }
 
