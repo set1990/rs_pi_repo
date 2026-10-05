@@ -3,28 +3,36 @@
 #include "physical_controller.h"
 #include "async_logger.h"
 #include "pigpio.h"
+#include <unistd.h>
+#include <fstream>
 
 namespace {
-	constexpr uint32_t START_TASK_PAUSE_MS = 10;
-	constexpr uint32_t ACCEPT_REQ_PAUSE_MS = 60;
-	constexpr uint32_t OPEN_DOOR_PAUSE_MS  = 85;
+	constexpr uint32_t START_ACCEPT_PAUSE_MS = 1;
+	constexpr uint32_t ACCEPT_REQ_PAUSE_MS   = 60;
+	constexpr uint32_t OPEN_DOOR_PAUSE_US    = 8500;
 }
 
 
-std::shared_ptr<PhysicalController> PhysicalController::create_controller(uint8_t pin_input, uint8_t pin_out1, uint8_t pin_out2)
+std::shared_ptr<PhysicalController> PhysicalController::create_controller(uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2)
 {
 	LOG_INFO("PhysicalController instance created");
-	return std::shared_ptr<PhysicalController>(new PhysicalController(pin_input, pin_out1, pin_out2)); // @suppress("Symbol is not resolved")
+	return std::shared_ptr<PhysicalController>(new PhysicalController(pin_input, pin_out0, pin_out1, pin_out2)); // @suppress("Symbol is not resolved")
 }
 
-PhysicalController::PhysicalController(uint8_t pint_input, uint8_t pint_out1, uint8_t pint_out2): config_pins{pint_input, pint_out1, pint_out2}
+PhysicalController::PhysicalController(uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2): config_pins{pin_input, pin_out0, pin_out1, pin_out2}
 {
+
     gpioSetMode(config_pins.pin_input, PI_INPUT);
     gpioSetMode(config_pins.pin_out1, PI_OUTPUT);
     gpioSetMode(config_pins.pin_out2, PI_OUTPUT);
     gpioSetPullUpDown(config_pins.pin_input, PI_PUD_OFF);
     gpioWrite(config_pins.pin_out1, PI_LOW);
     gpioWrite(config_pins.pin_out2, PI_LOW);
+    if(pin_out0!=0)
+    {
+        gpioSetMode(config_pins.pin_out0, PI_OUTPUT);
+        gpioWrite(config_pins.pin_out0, PI_HIGH);
+    }
     worker_thread = std::thread(&PhysicalController::worker_loop, this);
 }
 
@@ -42,6 +50,10 @@ PhysicalController::~PhysicalController()
 	{
 		worker_thread.join();
 	}
+    if(config_pins.pin_out0!=0)
+    {
+    	gpioWrite(config_pins.pin_out0, PI_LOW);
+    }
 	LOG_INFO("worker thread finish");
 }
 
@@ -63,7 +75,6 @@ void PhysicalController::worker_loop()
             task = std::move(task_queue.front());
             task_queue.pop();
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(START_TASK_PAUSE_MS));
         if (task)
         {
         	LOG_DEBUG("task start");
@@ -86,7 +97,7 @@ void PhysicalController::enqueue_task(std::function<void()> task)
 
 void PhysicalController::gpioCallbackEx(int gpio, int level, uint32_t tick, void* userdata)
 {
-	LOG_INFO("gpioCallbackEx call");
+	LOG_DEBUG("gpioCallbackEx call");
 	auto* self = static_cast<PhysicalController*>(userdata);
     if(self)
     {
@@ -98,11 +109,10 @@ void PhysicalController::gpioCallbackEx(int gpio, int level, uint32_t tick, void
     	    {
     	    	self->req_number++;
     	    	gpioSetWatchdog(self->config_pins.pin_input, self->timout);
-    	    	LOG_DEBUG("req_number increase");
     	    }
     	    else if (level == 2)
     	    {
-    	    	LOG_DEBUG("time window close");
+    	    	LOG_DEBUG(("time window close" + std::to_string(self->req_number)));
     	    	if (self->req_number == self->expect)
     	        {
     	    		LOG_DEBUG("cheesed expect number");
@@ -142,8 +152,9 @@ void PhysicalController::wait_for_request(uint8_t expect_number, std::function<v
 void PhysicalController::accept_request()
 {
 	LOG_INFO("accept_request call");
-    gpioWrite(config_pins.pin_out1, PI_HIGH);
-    std::this_thread::sleep_for(std::chrono::milliseconds(ACCEPT_REQ_PAUSE_MS));
+	std::this_thread::sleep_for(std::chrono::seconds(START_ACCEPT_PAUSE_MS));
+	gpioWrite(config_pins.pin_out1, PI_HIGH);
+	std::this_thread::sleep_for(std::chrono::milliseconds(ACCEPT_REQ_PAUSE_MS));
     gpioWrite(config_pins.pin_out2, PI_HIGH);
     gpioWrite(config_pins.pin_out1, PI_LOW);
 }
@@ -152,7 +163,7 @@ void PhysicalController::open_door()
 {
 	LOG_INFO("open_door call");
     gpioWrite(config_pins.pin_out2, PI_LOW);
-    std::this_thread::sleep_for(std::chrono::milliseconds(OPEN_DOOR_PAUSE_MS));
+    std::this_thread::sleep_for(std::chrono::microseconds(OPEN_DOOR_PAUSE_US));
     gpioWrite(config_pins.pin_out2, PI_HIGH);
 }
 

@@ -22,6 +22,7 @@
 struct pins
 {
 	uint8_t pin_input;
+	uint8_t pin_out0;
     uint8_t pin_out1;
     uint8_t pin_out2;
 };
@@ -39,16 +40,12 @@ public:
 	/**
 	 * @brief Factory method creating an instance of PhysicalController.
 	 * @param pin_input Input pin number.
+	 * @param pin_out0 connect disconnect intercom line pine.
 	 * @param pin_out1 First output pin number.
 	 * @param pin_out2 Second output pin number.
 	 * @return std::shared_ptr to the newly created instance.
 	 */
-    static std::shared_ptr<PhysicalController> create_controller(uint8_t pin_input, uint8_t pin_out1, uint8_t pin_out2);
-
-    /**
-     * @brief Triggers door opening via output control signals.
-     */
-    void open_door();
+    static std::shared_ptr<PhysicalController> create_controller(uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2);
 
     /**
      * @brief Configures pulse detection on the input pin.
@@ -56,8 +53,9 @@ public:
      * @param callback User callback function executed upon receiving the expected pulses.
      * @param window_ms Watchdog timeout duration [ms] between consecutive pulses.
      */
-    void wait_for_request(uint8_t expect_number = 0, std::function<void(std::shared_ptr<PhysicalController>)> callback = nullptr, uint32_t window_ms = 200);
+    void wait_for_request(uint8_t expect_number = 0, std::function<void(std::shared_ptr<PhysicalController>)> callback = nullptr, uint32_t window_ms = 10);
 
+    void open_door();
     void accept_request();
     void decline_request();
     void end_call();
@@ -105,7 +103,7 @@ private:
 	 * @param pint_out1 First output pin number.
 	 * @param pint_out2 Second output pin number.
 	 */
-	PhysicalController(uint8_t pint_input, uint8_t pint_out1, uint8_t pint_out2);
+	PhysicalController(uint8_t pint_input, uint8_t pint_out0, uint8_t pint_out1, uint8_t pint_out2);
 };
 
 #endif /* PHYSICAL_CONTROLLER_H  */
