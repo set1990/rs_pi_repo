@@ -12,7 +12,12 @@
 #include <sys/un.h>
 #include <sys/socket.h>
 
-constexpr std::size_t PAYLOAD_SIZE = 8;
+constexpr std::size_t PAYLOAD_SIZE       = 8;
+constexpr std::uint8_t NUMBER_RING       = 0;
+constexpr std::uint8_t NUMBER_PIN_INPUT  = 1;
+constexpr std::uint8_t NUMBER_PIN_OTPUT0 = 2;
+constexpr std::uint8_t NUMBER_PIN_OTPUT1 = 3;
+constexpr std::uint8_t NUMBER_PIN_OTPUT2 = 4;
 
 enum class msg_type : uint8_t
 {
@@ -36,7 +41,7 @@ class IpcConnectorSerwer
 public:
 	IpcConnectorSerwer();
 	~IpcConnectorSerwer();
-	void msg_handler(std::function<msg_package(msg_package&)> callback);
+	void run_msg_handler(std::function<msg_package(msg_package&)> callback_for_connect);
 	void send_to_clients(msg_package msg);
 	msg_package wait_for_answer(uint8_t expect_number);
 	void notify_answer(msg_package answer);

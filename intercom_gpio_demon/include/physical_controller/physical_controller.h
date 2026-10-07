@@ -25,6 +25,13 @@ struct pins
 	uint8_t pin_out0;
     uint8_t pin_out1;
     uint8_t pin_out2;
+
+    bool operator==(const pins& other) const {
+        return (pin_input == other.pin_input &&
+        		pin_out0 == other.pin_out0 &&
+				pin_out1 == other.pin_out1 &&
+				pin_out2 == other.pin_out2);
+    }
 };
 
 /**
@@ -55,10 +62,15 @@ public:
      */
     void wait_for_request(std::function<void(std::shared_ptr<PhysicalController>)> callback = nullptr, uint32_t window_ms = 10);
 
+    uint8_t get_expects();
     void open_door();
     void accept_request();
     void decline_request();
     void end_call();
+
+    static bool add_expect_if_exist(std::vector<std::shared_ptr<PhysicalController>> ptr_in,
+    								uint8_t expect_number, uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2);
+    static bool add_expect_if_exist(std::shared_ptr<PhysicalController> ptr_in, uint8_t expect_number, pins pin_to_check);
 
     PhysicalController(const PhysicalController&) = delete;
     PhysicalController& operator=(const PhysicalController&) = delete;
@@ -67,11 +79,9 @@ public:
      * @brief Destructor. Unregisters pigpio callbacks and safely stops the worker thread.
      */
     ~PhysicalController();
-    uint8_t expect = 0;
 private:
     std::mutex mtx;
     uint32_t timout = 0;
-	uint8_t req_number = 0;
 
 	pins config_pins;
 	bool is_registered = false;
@@ -82,9 +92,15 @@ private:
 	std::mutex queue_mtx;
 	std::condition_variable queue_cv;
 	bool stop_worker = false;
+    std::vector<uint8_t> expect;
+    uint8_t req_number = 0;
+	static inline std::vector<uint8_t> cache_expect;
+	static inline std::vector<pins> cache_pins;
 
 	void worker_loop();
 	void enqueue_task(std::function<void()> task);
+    bool check_pins(pins pins_to_check);
+    bool check_expects(uint8_t expect);
 	inline void start_alert();
 	inline void stop_alert();
 

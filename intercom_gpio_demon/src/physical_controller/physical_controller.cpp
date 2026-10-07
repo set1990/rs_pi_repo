@@ -4,6 +4,7 @@
 #include "async_logger.h"
 #include "pigpio.h"
 #include <unistd.h>
+#include <algorithm>
 #include <fstream>
 
 namespace {
@@ -12,31 +13,55 @@ namespace {
 	constexpr uint32_t OPEN_DOOR_PAUSE_US    = 8500;
 }
 
-
 std::shared_ptr<PhysicalController> PhysicalController::create_controller(uint8_t expect_number,
 																		  uint8_t pin_input,
 																		  uint8_t pin_out0,
 																		  uint8_t pin_out1,
 																		  uint8_t pin_out2)
 {
-	static std::vector<uint8_t> cache;
 	LOG_INFO("PhysicalController instance created");
-	for(const auto& cache_e : cache)
+
+	if(std::any_of(cache_expect.begin(), cache_expect.end(), [expect_number](uint8_t number) {return number == expect_number;}))
 	{
-		if((cache_e==expect_number)||(cache_e==pin_input)||(cache_e==pin_out0)||(cache_e==pin_out1)||(cache_e==pin_out2))
-				return nullptr;
+		return nullptr;
 	}
-	cache.push_back(expect_number);
-	cache.push_back(pin_input);
-	cache.push_back(pin_out0);
-	cache.push_back(pin_out1);
-	cache.push_back(pin_out2);
+
+	for (uint8_t pin : {pin_input, pin_out0, pin_out1, pin_out2})
+	{
+	    if(std::any_of(cache_pins.begin(), cache_pins.end(), [pin](const pins& p) { return p.pin_input == pin ||
+	    																		           p.pin_out0 == pin  ||
+																				           p.pin_out1 == pin  ||
+																				           p.pin_out2 == pin;}))
+	    {
+	    	return nullptr;
+	    }
+	}
+
+	cache_expect.push_back(expect_number);
+	cache_pins.push_back({pin_input, pin_out0, pin_out1, pin_out2});
 	return std::shared_ptr<PhysicalController>(new PhysicalController(expect_number, pin_input, pin_out0, pin_out1, pin_out2)); // @suppress("Symbol is not resolved")
 }
 
-PhysicalController::PhysicalController(uint8_t expect_number, uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2):
-		config_pins{pin_input, pin_out0, pin_out1, pin_out2}, expect(expect_number)
+bool PhysicalController::add_expect_if_exist(std::vector<std::shared_ptr<PhysicalController>> ptr_in_v,
+		                                     uint8_t expect_number, uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2)
 {
+	for(auto ptr : ptr_in_v)
+	{
+		return (add_expect_if_exist(ptr, expect_number, {pin_input, pin_out0, pin_out1, pin_out2}));
+	}
+	return false;
+}
+
+bool PhysicalController::add_expect_if_exist(std::shared_ptr<PhysicalController> ptr_in, uint8_t expect_number, pins pin_in)
+{
+	if(ptr_in->check_pins(pin_in)&&ptr_in->check_expects(expect_number)) return true;
+	else return false;
+}
+
+PhysicalController::PhysicalController(uint8_t expect_number, uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2):
+		config_pins{pin_input, pin_out0, pin_out1, pin_out2}
+{
+	expect.push_back(expect_number);
     gpioSetMode(config_pins.pin_input, PI_INPUT);
     gpioSetMode(config_pins.pin_out1, PI_OUTPUT);
     gpioSetMode(config_pins.pin_out2, PI_OUTPUT);
@@ -128,7 +153,7 @@ void PhysicalController::gpioCallbackEx(int gpio, int level, uint32_t tick, void
     	    else if (level == 2)
     	    {
     	    	LOG_DEBUG(("time window close" + std::to_string(self->req_number)));
-    	    	if (self->req_number == self->expect)
+		        if(self->check_expects(self->req_number))
     	        {
     	    		LOG_DEBUG("cheesed expect number");
     	            callback_to_run = self->interface_callbeck;
@@ -149,6 +174,21 @@ void PhysicalController::gpioCallbackEx(int gpio, int level, uint32_t tick, void
 
     	}
     }
+}
+
+bool PhysicalController::check_pins(pins pins_to_check)
+{
+	 return((config_pins == pins_to_check) ? false : true);
+}
+
+bool PhysicalController::check_expects(uint8_t expect_in)
+{
+	return std::any_of(expect.begin(), expect.end(), [expect_in](uint8_t number) {return number == expect_in;});
+}
+
+uint8_t PhysicalController::get_expects()
+{
+	return req_number;
 }
 
 void PhysicalController::wait_for_request(std::function<void(std::shared_ptr<PhysicalController>)> callback, uint32_t window_ms)

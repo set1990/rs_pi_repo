@@ -27,34 +27,52 @@ IpcConnectorSerwer::~IpcConnectorSerwer()
     unlink(SERVER_PATH);
 }
 
-void IpcConnectorSerwer::msg_handler(std::function<msg_package(msg_package& msg)> callback)
+void IpcConnectorSerwer::run_msg_handler(std::function<msg_package(msg_package& msg)> callback_for_connect)
 {
-    msg_package msg_in;
-    msg_package msg_out;
-    sockaddr_un client_addr{};
-    socklen_t client_len = sizeof(client_addr);
-    char buffer[BUFFER_SIZE]{};
+	std::thread ([&]() {
+	    msg_package msg_in;
+	    msg_package msg_out;
+	    sockaddr_un client_addr{};
+	    socklen_t client_len = sizeof(client_addr);
+	    char buffer[BUFFER_SIZE]{};
 
-    ssize_t bytes_read = recvfrom(server_fd, buffer, sizeof(buffer), 0, (struct sockaddr*)(&client_addr), &client_len); // @suppress("Invalid arguments")
+	    ssize_t bytes_read = recvfrom(server_fd, buffer, sizeof(buffer), 0, (struct sockaddr*)(&client_addr), &client_len); // @suppress("Invalid arguments")
 
-    if(bytes_read > 0)
-    {
-    	msg_in.type = msg_type(buffer[0]);
-        std::memcpy(msg_in.payload, &buffer[1], PAYLOAD_SIZE); // @suppress("Invalid arguments")
-        msg_out = callback(msg_in);
-        std::memset(buffer, 0, sizeof(buffer)); // @suppress("Invalid arguments")
-        buffer[0] = char(msg_out.type);
-        std::memcpy(&buffer[1], msg_out.payload, PAYLOAD_SIZE); // @suppress("Invalid arguments")
+	    if(bytes_read > 0)
+	    {
+	    	msg_in.type = msg_type(buffer[0]);
+	        std::memcpy(msg_in.payload, &buffer[1], PAYLOAD_SIZE); // @suppress("Invalid arguments")
+			msg_package msg_out;
+			switch (msg_in.type)
+			{
+			case msg_type::CONNECT:
+				msg_out = callback_for_connect(msg_in);
+				break;
+			case msg_type::REQ_ACCEPT:
+			case msg_type::REQ_REJECT:
+			case msg_type::ACTION:
+			case msg_type::CALL_END:
+				notify_answer(msg_in);
+				break;
+			case msg_type::EMPTY:
+			default:
+				break;
+			}
+	        std::memset(buffer, 0, sizeof(buffer)); // @suppress("Invalid arguments")
+	        buffer[0] = char(msg_out.type);
+	        std::memcpy(&buffer[1], msg_out.payload, PAYLOAD_SIZE); // @suppress("Invalid arguments")
 
-         if(client_addr.sun_path[0] != '\0')
-         {
-        	 if(msg_out.type == msg_type::CONNECT)
-        	 {
-        		 clients_map[msg_in.payload[0]].push_back(client_addr);
-        	 }
-        	 else sendto(server_fd, buffer, sizeof(buffer), 0, (struct sockaddr*)(&client_addr), client_len); // @suppress("Invalid arguments")
-         }
-    }
+	         if(client_addr.sun_path[0] != '\0')
+	         {
+	        	 if(msg_out.type == msg_type::CONNECT)
+	        	 {
+	        		 clients_map[msg_in.payload[0]].push_back(client_addr);
+	        	 }
+	        	 else sendto(server_fd, buffer, sizeof(buffer), 0, (struct sockaddr*)(&client_addr), client_len); // @suppress("Invalid arguments")
+	         }
+	    }
+	    }).detach();
+
 }
 
 void IpcConnectorSerwer::send_to_clients(msg_package msg)
