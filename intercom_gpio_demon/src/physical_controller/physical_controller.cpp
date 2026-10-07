@@ -13,15 +13,30 @@ namespace {
 }
 
 
-std::shared_ptr<PhysicalController> PhysicalController::create_controller(uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2)
+std::shared_ptr<PhysicalController> PhysicalController::create_controller(uint8_t expect_number,
+																		  uint8_t pin_input,
+																		  uint8_t pin_out0,
+																		  uint8_t pin_out1,
+																		  uint8_t pin_out2)
 {
+	static std::vector<uint8_t> cache;
 	LOG_INFO("PhysicalController instance created");
-	return std::shared_ptr<PhysicalController>(new PhysicalController(pin_input, pin_out0, pin_out1, pin_out2)); // @suppress("Symbol is not resolved")
+	for(const auto& cache_e : cache)
+	{
+		if((cache_e==expect_number)||(cache_e==pin_input)||(cache_e==pin_out0)||(cache_e==pin_out1)||(cache_e==pin_out2))
+				return nullptr;
+	}
+	cache.push_back(expect_number);
+	cache.push_back(pin_input);
+	cache.push_back(pin_out0);
+	cache.push_back(pin_out1);
+	cache.push_back(pin_out2);
+	return std::shared_ptr<PhysicalController>(new PhysicalController(expect_number, pin_input, pin_out0, pin_out1, pin_out2)); // @suppress("Symbol is not resolved")
 }
 
-PhysicalController::PhysicalController(uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2): config_pins{pin_input, pin_out0, pin_out1, pin_out2}
+PhysicalController::PhysicalController(uint8_t expect_number, uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2):
+		config_pins{pin_input, pin_out0, pin_out1, pin_out2}, expect(expect_number)
 {
-
     gpioSetMode(config_pins.pin_input, PI_INPUT);
     gpioSetMode(config_pins.pin_out1, PI_OUTPUT);
     gpioSetMode(config_pins.pin_out2, PI_OUTPUT);
@@ -136,17 +151,13 @@ void PhysicalController::gpioCallbackEx(int gpio, int level, uint32_t tick, void
     }
 }
 
-void PhysicalController::wait_for_request(uint8_t expect_number, std::function<void(std::shared_ptr<PhysicalController>)> callback, uint32_t window_ms)
+void PhysicalController::wait_for_request(std::function<void(std::shared_ptr<PhysicalController>)> callback, uint32_t window_ms)
 {
-	if(expect_number>0)
-	{
 		LOG_INFO("start wait to request");
 		std::lock_guard<std::mutex> lock(mtx);
-		expect = expect_number;
 		interface_callbeck = callback;
 		timout = window_ms;
 		start_alert();
-	}
 }
 
 void PhysicalController::accept_request()

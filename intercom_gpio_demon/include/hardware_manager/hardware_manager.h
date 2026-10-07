@@ -14,7 +14,8 @@
  * @details Pure static class that cannot be instantiated. Responsible for
  *          setting up and safely tearing down global hardware dependencies.
  */
-class HardwareManager {
+class HardwareManager 
+{
 public:
     HardwareManager() = delete;
     HardwareManager(const HardwareManager&) = delete;
