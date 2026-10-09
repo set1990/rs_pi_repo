@@ -5,6 +5,8 @@
 #include <string>
 #include <functional>
 #include <cstdint>
+#include <atomic>
+#include <thread>
 #include <map>
 #include <mutex>
 #include <condition_variable>
@@ -21,13 +23,13 @@ constexpr std::uint8_t NUMBER_PIN_OTPUT2 = 4;
 
 enum class msg_type : uint8_t
 {
+	EMPTY,
 	CONNECT,
 	CALL_REQ,
 	REQ_ACCEPT,
 	REQ_REJECT,
-	CALL_END,
 	ACTION,
-	EMPTY,
+	CALL_END
 };
 
 struct msg_package
@@ -45,13 +47,17 @@ public:
 	void send_to_clients(msg_package msg);
 	msg_package wait_for_answer(uint8_t expect_number);
 	void notify_answer(msg_package answer);
+	void stop();
 private:
 	std::map<std::uint8_t, std::vector<sockaddr_un>> clients_map;
-	int server_fd;
+	int server_fd = -1;
+	int stop_fd = -1;
 	bool error = false;
 	std::mutex mtx;
 	std::condition_variable cv;
-	msg_package answer;
+	msg_package answer {};
+	std::atomic<bool> stopping{false};
+	std::thread worker;
 };
 
 class IpcConnectorClient
@@ -60,6 +66,7 @@ public:
 	IpcConnectorClient();
 	~IpcConnectorClient();
 	msg_package send_msg(msg_package&);
+	msg_package wait_for_msg();
 private:
 	int client_fd;
 	bool error = false;

@@ -72,6 +72,7 @@ public:
     								uint8_t expect_number, uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2);
     static bool add_expect_if_exist(std::shared_ptr<PhysicalController> ptr_in, uint8_t expect_number, pins pin_to_check);
 
+
     PhysicalController(const PhysicalController&) = delete;
     PhysicalController& operator=(const PhysicalController&) = delete;
 
@@ -94,6 +95,7 @@ private:
 	bool stop_worker = false;
     std::vector<uint8_t> expect;
     uint8_t req_number = 0;
+    uint8_t find_number = 0;
 	static inline std::vector<uint8_t> cache_expect;
 	static inline std::vector<pins> cache_pins;
 
@@ -103,6 +105,7 @@ private:
     bool check_expects(uint8_t expect);
 	inline void start_alert();
 	inline void stop_alert();
+	inline void add_expect(uint8_t expect_number);
 
 	/**
 	 * @brief Static C-style callback function registered with the pigpio library.

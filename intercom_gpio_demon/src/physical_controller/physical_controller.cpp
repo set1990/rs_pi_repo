@@ -54,13 +54,26 @@ bool PhysicalController::add_expect_if_exist(std::vector<std::shared_ptr<Physica
 
 bool PhysicalController::add_expect_if_exist(std::shared_ptr<PhysicalController> ptr_in, uint8_t expect_number, pins pin_in)
 {
-	if(ptr_in->check_pins(pin_in)&&ptr_in->check_expects(expect_number)) return true;
+	LOG_DEBUG("Check compatibility");
+	if(ptr_in->check_pins(pin_in))
+	{
+		LOG_DEBUG("Pins compatibility");
+		if(!(ptr_in->check_expects(expect_number))) ptr_in->add_expect(expect_number);
+		return true;
+	}
 	else return false;
+}
+
+void PhysicalController::add_expect(uint8_t expect_number)
+{
+	LOG_DEBUG("Added expect to exist");
+	expect.push_back(expect_number);
 }
 
 PhysicalController::PhysicalController(uint8_t expect_number, uint8_t pin_input, uint8_t pin_out0, uint8_t pin_out1, uint8_t pin_out2):
 		config_pins{pin_input, pin_out0, pin_out1, pin_out2}
 {
+	LOG_DEBUG("Start PhysicalController constructor");
 	expect.push_back(expect_number);
     gpioSetMode(config_pins.pin_input, PI_INPUT);
     gpioSetMode(config_pins.pin_out1, PI_OUTPUT);
@@ -70,6 +83,7 @@ PhysicalController::PhysicalController(uint8_t expect_number, uint8_t pin_input,
     gpioWrite(config_pins.pin_out2, PI_LOW);
     if(pin_out0!=0)
     {
+    	LOG_DEBUG("Connection to line");
         gpioSetMode(config_pins.pin_out0, PI_OUTPUT);
         gpioWrite(config_pins.pin_out0, PI_HIGH);
     }
@@ -137,7 +151,6 @@ void PhysicalController::enqueue_task(std::function<void()> task)
 
 void PhysicalController::gpioCallbackEx(int gpio, int level, uint32_t tick, void* userdata)
 {
-	LOG_DEBUG("gpioCallbackEx call");
 	auto* self = static_cast<PhysicalController*>(userdata);
     if(self)
     {
@@ -152,11 +165,12 @@ void PhysicalController::gpioCallbackEx(int gpio, int level, uint32_t tick, void
     	    }
     	    else if (level == 2)
     	    {
-    	    	LOG_DEBUG(("time window close" + std::to_string(self->req_number)));
+    	    	//LOG_DEBUG(("time window close" + std::to_string(self->req_number)));
 		        if(self->check_expects(self->req_number))
     	        {
     	    		LOG_DEBUG("cheesed expect number");
-    	            callback_to_run = self->interface_callbeck;
+    	    		self->find_number = self->req_number;
+    	    		callback_to_run = self->interface_callbeck;
     	        }
     	        self->req_number = 0;
     	        gpioSetWatchdog(self->config_pins.pin_input, PI_OFF);
@@ -178,7 +192,7 @@ void PhysicalController::gpioCallbackEx(int gpio, int level, uint32_t tick, void
 
 bool PhysicalController::check_pins(pins pins_to_check)
 {
-	 return((config_pins == pins_to_check) ? false : true);
+	 return((config_pins == pins_to_check) ? true : false);
 }
 
 bool PhysicalController::check_expects(uint8_t expect_in)
@@ -188,7 +202,8 @@ bool PhysicalController::check_expects(uint8_t expect_in)
 
 uint8_t PhysicalController::get_expects()
 {
-	return req_number;
+	std::lock_guard<std::mutex> lock(mtx);
+	return find_number;
 }
 
 void PhysicalController::wait_for_request(std::function<void(std::shared_ptr<PhysicalController>)> callback, uint32_t window_ms)
@@ -234,12 +249,12 @@ void PhysicalController::end_call()
 
 inline void PhysicalController::start_alert()
 {
-	LOG_DEBUG("gpio alert activate");
+	LOG_DEBUG("GPIO alert activate");
 	gpioSetAlertFuncEx(config_pins.pin_input, &PhysicalController::gpioCallbackEx, this);
 }
 
 inline void PhysicalController::stop_alert()
 {
-	LOG_DEBUG("gpio alert deactivate");
+	LOG_DEBUG("GPIO alert deactivate");
 	gpioSetAlertFuncEx(config_pins.pin_input, nullptr, nullptr);
 }
