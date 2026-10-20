@@ -9,14 +9,13 @@ const int kListenPort = 8888;
 const int kTargetPort = 8889;
 const int kCallNotificationId = 1;
 
-/// Punkt wejścia usługi pierwszoplanowej (osobny izolat).
+
 @pragma('vm:entry-point')
 void startCallback() {
   FlutterForegroundTask.setTaskHandler(UdpTaskHandler());
 }
 
-/// Nasłuchuje UDP w tle, pokazuje powiadomienie o połączeniu
-/// i wysyła komendy do domofonu (z tego samego gniazda, portu 8888).
+
 class UdpTaskHandler extends TaskHandler {
   RawDatagramSocket? _socket;
   final FlutterLocalNotificationsPlugin _notifications =
@@ -57,6 +56,7 @@ class UdpTaskHandler extends TaskHandler {
       _ringing = true;
       _lastSenderIp = datagram.address.address;
       _showIncomingCall(_lastSenderIp);
+      _bringAppToFront();
       FlutterForegroundTask.sendDataToMain({
         'event': 'ring',
         'ip': _lastSenderIp,
@@ -71,7 +71,7 @@ class UdpTaskHandler extends TaskHandler {
       'Połączenie od $ip',
       NotificationDetails(
         android: AndroidNotificationDetails(
-          'calls_v2', // nowy id kanału: ustawień istniejącego kanału nie da się zmienić
+          'calls_v3',
           'Połączenia',
           channelDescription: 'Przychodzące połączenia z domofonu',
           importance: Importance.max,
@@ -81,14 +81,26 @@ class UdpTaskHandler extends TaskHandler {
           ongoing: true,
           autoCancel: false,
           playSound: true,
+          sound: const RawResourceAndroidNotificationSound('ring'),
           audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
-          // FLAG_INSISTENT (4): dźwięk gra w pętli do odebrania/odrzucenia
           additionalFlags: Int32List.fromList(<int>[4]),
           enableVibration: true,
           vibrationPattern: Int64List.fromList(<int>[0, 1000, 1000, 1000]),
         ),
       ),
     );
+  }
+
+
+  Future<void> _bringAppToFront() async {
+    try {
+      if (await FlutterForegroundTask.canDrawOverlays) {
+        FlutterForegroundTask.launchApp();
+      }
+    } catch (e) {
+      // ignore: avoid_print
+      print('launchApp failed: $e');
+    }
   }
 
   void _sendUdp(String message) {
@@ -100,23 +112,25 @@ class UdpTaskHandler extends TaskHandler {
     );
   }
 
-  /// Wiadomości z UI.
+
   @override
   void onReceiveData(Object data) {
     if (data is! Map) return;
 
     switch (data['cmd']) {
       case 'send':
+        final ip = data['ip'];
+        if (ip is String && ip.isNotEmpty) _lastSenderIp = ip;
         _sendUdp(data['message'] as String);
         break;
-      case 'accepted': // odebrano: zdejmij powiadomienie, ale nadal "w rozmowie"
+      case 'accepted':
         _notifications.cancel(kCallNotificationId);
         break;
-      case 'finish': // koniec dzwonienia/rozmowy
+      case 'finish':
         _ringing = false;
         _notifications.cancel(kCallNotificationId);
         break;
-      case 'getState': // UI pyta o stan po otwarciu z powiadomienia
+      case 'getState':
         FlutterForegroundTask.sendDataToMain({
           'event': 'state',
           'ringing': _ringing,
@@ -131,6 +145,7 @@ class UdpTaskHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp) async {
+    _notifications.cancel(kCallNotificationId);
     _socket?.close();
     _socket = null;
   }

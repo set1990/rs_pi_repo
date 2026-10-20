@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'udp_task_handler.dart';
+
+const MethodChannel _native = MethodChannel('intercom/native');
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,33 +46,39 @@ class _IntercomScreenState extends State<IntercomScreen>
   AppState _currentState = AppState.waiting;
   String _lastSenderIp = '';
 
+  bool _foreground = true;
+  Timer? _stateTimer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     FlutterForegroundTask.addTaskDataCallback(_onServiceData);
+
+    _requestState();
+    _stateTimer = Timer.periodic(const Duration(milliseconds: 700), (_) {
+      if (_foreground && _currentState == AppState.waiting) {
+        _requestState();
+      }
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) => _startService());
   }
 
   @override
   void dispose() {
+    _stateTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     FlutterForegroundTask.removeTaskDataCallback(_onServiceData);
     super.dispose();
   }
 
-  /// Po powrocie na pierwszy plan zapytaj usługę, czy telefon akurat dzwoni
-  /// (np. apka otwarta z powiadomienia pełnoekranowego).
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _sendToService({'cmd': 'getState'});
-    }
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground) _requestState();
   }
 
-  // ---------------------------------------------------------------------------
-  // Usługa w tle
-  // ---------------------------------------------------------------------------
 
   Future<void> _startService() async {
     if (!Platform.isAndroid) return;
@@ -80,14 +90,21 @@ class _IntercomScreenState extends State<IntercomScreen>
     if (!await FlutterForegroundTask.isIgnoringBatteryOptimizations) {
       await FlutterForegroundTask.requestIgnoreBatteryOptimization();
     }
+    if (!await FlutterForegroundTask.canDrawOverlays) {
+      await FlutterForegroundTask.openSystemAlertWindowSettings();
+    }
 
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
-        channelId: 'intercom_service',
-        channelName: 'Domofon',
-        channelDescription: 'Nasłuchiwanie połączeń z domofonu',
-        channelImportance: NotificationChannelImportance.LOW,
-        priority: NotificationPriority.LOW,
+        channelId: 'intercom_service_v2',
+        channelName: 'Intercom in background',
+        channelDescription: 'Intercom',
+        channelImportance: NotificationChannelImportance.MIN,
+        priority: NotificationPriority.MIN,
+        visibility: NotificationVisibility.VISIBILITY_SECRET,
+        onlyAlertOnce: true,
+        showWhen: false,
+        showBadge: false,
       ),
       iosNotificationOptions: const IOSNotificationOptions(),
       foregroundTaskOptions: ForegroundTaskOptions(
@@ -98,31 +115,34 @@ class _IntercomScreenState extends State<IntercomScreen>
       ),
     );
 
-    if (await FlutterForegroundTask.isRunningService) {
-      await FlutterForegroundTask.restartService();
-    } else {
+    if (!await FlutterForegroundTask.isRunningService) {
       await FlutterForegroundTask.startService(
         serviceId: 256,
-        notificationTitle: 'Domofon aktywny',
-        notificationText: 'Oczekiwanie na połączenie',
+        notificationTitle: 'Intercom',
+        notificationText: 'Intercom active',
         callback: startCallback,
       );
     }
 
-    _sendToService({'cmd': 'getState'});
+    _requestState();
   }
 
   void _sendToService(Map<String, Object> data) {
-    FlutterForegroundTask.sendDataToTask(data);
+    try {
+      FlutterForegroundTask.sendDataToTask(data);
+    } catch (_) {}
   }
+
+  void _requestState() => _sendToService({'cmd': 'getState'});
 
   void _onServiceData(Object data) {
     if (data is! Map) return;
 
     final event = data['event'];
-    final ringing = event == 'ring' || (event == 'state' && data['ringing'] == true);
+    final ringing =
+        event == 'ring' || (event == 'state' && data['ringing'] == true);
 
-    if (ringing && _currentState == AppState.waiting) {
+    if (ringing && _currentState == AppState.waiting && mounted) {
       setState(() {
         _currentState = AppState.ringing;
         _lastSenderIp = (data['ip'] as String?) ?? '';
@@ -130,13 +150,15 @@ class _IntercomScreenState extends State<IntercomScreen>
     }
   }
 
+
   void _sendUdpPacket(String message) {
-    _sendToService({'cmd': 'send', 'message': message});
+    _sendToService({
+      'cmd': 'send',
+      'message': message,
+      'ip': _lastSenderIp,
+    });
   }
 
-  // ---------------------------------------------------------------------------
-  // Akcje
-  // ---------------------------------------------------------------------------
 
   void _onAcceptPressed() {
     _sendUdpPacket('CMD_ACCEPT');
@@ -148,6 +170,7 @@ class _IntercomScreenState extends State<IntercomScreen>
     _sendUdpPacket('CMD_REJECT');
     _sendToService({'cmd': 'finish'});
     setState(() => _currentState = AppState.waiting);
+    _closeWindow();
   }
 
   void _onOpenPressed() {
@@ -158,11 +181,32 @@ class _IntercomScreenState extends State<IntercomScreen>
     _sendUdpPacket('CMD_END');
     _sendToService({'cmd': 'finish'});
     setState(() => _currentState = AppState.waiting);
+    _closeWindow();
   }
 
-  // ---------------------------------------------------------------------------
-  // UI
-  // ---------------------------------------------------------------------------
+
+  Future<void> _closeWindow() async {
+    await Future.delayed(const Duration(milliseconds: 400));
+    try {
+      await _native.invokeMethod('closeApp');
+    } catch (_) {
+      await SystemNavigator.pop();
+    }
+  }
+
+  void _onRunPressed() => _closeWindow();
+
+  Future<void> _onExitPressed() async {
+    try {
+      await FlutterForegroundTask.stopService();
+    } catch (_) {}
+    try {
+      await _native.invokeMethod('killApp');
+    } catch (_) {
+      await SystemNavigator.pop();
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -182,22 +226,56 @@ class _IntercomScreenState extends State<IntercomScreen>
     );
   }
 
+  Widget _wideButton({
+    required VoidCallback onPressed,
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return SizedBox(
+      width: 240,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon),
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: Colors.white,
+        ),
+      ),
+    );
+  }
+
   Widget _buildBodyContent() {
     switch (_currentState) {
       case AppState.waiting:
-        return const Column(
+        return Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Image(
+            const Image(
               image: AssetImage('assets/images/logo.png'),
               width: 300,
               height: 300,
             ),
-            SizedBox(height: 20),
-            Text(
+            const SizedBox(height: 20),
+            const Text(
               'Waiting For The Call...',
               style: TextStyle(fontSize: 18),
               textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 40),
+            _wideButton(
+              onPressed: _onRunPressed,
+              icon: Icons.play_arrow,
+              label: 'RUN',
+              color: Colors.green,
+            ),
+            const SizedBox(height: 12),
+            _wideButton(
+              onPressed: _onExitPressed,
+              icon: Icons.power_settings_new,
+              label: 'EXIT',
+              color: Colors.red,
             ),
           ],
         );
